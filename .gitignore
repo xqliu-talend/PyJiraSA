@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
+__temp__/
 
 # C extensions
 *.so
@@ -102,3 +103,6 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+
+#MacOS
+.DS_Store
