@@ -17,13 +17,15 @@ class TestCoverage(Enum):
 
 class JiraConfig(object):
     '''the configuration of jira: server address, username, password etc.'''
-    def __init__(self, server, project_name, board_id, sprint_id, username, password):
-        self.__server = server
-        self.__project_name = project_name
-        self.__board_id = board_id
-        self.__sprint_id = sprint_id
-        self.__username = username
-        self.__password = password
+    def __init__(self, conf_file):
+        cfg = ConfigParser()
+        cfg.read(conf_file)
+        self.__server = cfg.get('jira', 'server')
+        self.__project_name = cfg.get('jira', 'project_name')
+        self.__board_id = cfg.get('sprint', 'board_id')
+        self.__sprint_id = cfg.get('sprint', 'sprint_id')
+        self.__username = cfg.get('login', 'username')
+        self.__password = cfg.get('login', 'password')
 
     @property
     def server(self):
@@ -59,7 +61,6 @@ class JiraTestCoverage(object):
         self.__end_date = None
         self.__issue_keys = set()  # all issue keys belong to the sprint
         self.__test_coverage_issues = {}  # store the test coverage of the sprint {key=label, value=number of issues}
-        self.__no_label_issues = set()  # the issues which have NOT any of above labels
 
     @property
     def sprint_id(self):
@@ -101,17 +102,6 @@ class JiraTestCoverage(object):
     def test_coverage_issues(self):
         return self.__test_coverage_issues
 
-    @property
-    def no_label_issues(self):
-        return self.__no_label_issues
-
-
-def load_jira_config(conf_file):
-    '''load the jira configuration from a conf file'''
-    cfg = ConfigParser()
-    cfg.read(conf_file)
-    return JiraConfig(cfg.get('jira', 'server'), cfg.get('jira', 'project_name'), cfg.get('jira', 'board_id'), cfg.get('sprint', 'sprint_id'), cfg.get('login', 'username'), cfg.get('login', 'password'), )
-
 
 def get_sprint_time_range(username, password, sprint_id):
     '''get the start and end date of the sprint'''
@@ -132,9 +122,7 @@ def jira_sa(jira_config):
     jira_obj = JIRA(basic_auth=(jira_config.username, jira_config.password), server=jira_config.server)
     cur_sprint = jira_obj.sprint(jira_config.sprint_id)
 
-    if not cur_sprint:
-        print(f'>> Can not find the sprint[{jira_config.sprint_id}], exit!')
-    else:
+    if cur_sprint:
         print(f'name=[{cur_sprint.name}] id=[{cur_sprint.id}]')
         sprint_start, sprint_end = get_sprint_time_range(jira_config.username, jira_config.password, cur_sprint.id)
         jira_test_coverage.sprint_id = cur_sprint.id
@@ -156,7 +144,10 @@ def jira_sa(jira_config):
                     else:
                         jira_test_coverage.test_coverage_issues[label] = {issue.key}
             if not covered:
-                jira_test_coverage.no_label_issues.add(issue.key)
+                if TestCoverage.No_Label.name in jira_test_coverage.test_coverage_issues.keys():
+                    jira_test_coverage.test_coverage_issues[TestCoverage.No_Label.name].add(issue.key)
+                else:
+                    jira_test_coverage.test_coverage_issues[TestCoverage.No_Label.name] = {issue.key}
 
     return jira_test_coverage
 
@@ -171,11 +162,13 @@ def jira_viz(jira_test_coverage):
     ratios = []
     labels = []
 
-    if len(jira_test_coverage.issue_keys) > 0:
+    total_issues_count = len(jira_test_coverage.issue_keys)
+    if total_issues_count > 0:
         no_case_needed_issues = jira_test_coverage.test_coverage_issues.get(TestCoverage.No_Case_Needed.name, set())
         junit_issues = jira_test_coverage.test_coverage_issues.get(TestCoverage.Covered_by_Junit.name, set())
         tuj_issues = jira_test_coverage.test_coverage_issues.get(TestCoverage.Covered_by_Tuj.name, set())
         manual_case_issues = jira_test_coverage.test_coverage_issues.get(TestCoverage.Covered_by_manualCases.name, set())
+        no_label_issues = jira_test_coverage.test_coverage_issues.get(TestCoverage.No_Label.name, set())
 
         junit_issues_only = junit_issues - tuj_issues - manual_case_issues
         tuj_issues_only = tuj_issues - junit_issues - manual_case_issues
@@ -185,32 +178,32 @@ def jira_viz(jira_test_coverage):
         tuj_manual_case_issues_only = tuj_issues & manual_case_issues - junit_issues
         junit_tuj_manual_case_issues = junit_issues & tuj_issues & manual_case_issues
 
-        if len(jira_test_coverage.no_label_issues)>0:
-            ratios.append(len(jira_test_coverage.no_label_issues)/len(jira_test_coverage.issue_keys))
-            labels.append(f'{TestCoverage.No_Label.value}({len(jira_test_coverage.no_label_issues)})')
+        if len(no_label_issues)>0:
+            ratios.append(len(no_label_issues)/total_issues_count)
+            labels.append(f'{TestCoverage.No_Label.value}({len(no_label_issues)})')
         if len(no_case_needed_issues)>0:
-            ratios.append(len(no_case_needed_issues)/len(jira_test_coverage.issue_keys))
+            ratios.append(len(no_case_needed_issues)/total_issues_count)
             labels.append(f'{TestCoverage.No_Case_Needed.value}({len(no_case_needed_issues)})')
         if len(junit_issues_only)>0:
-            ratios.append(len(junit_issues_only)/len(jira_test_coverage.issue_keys))
+            ratios.append(len(junit_issues_only)/total_issues_count)
             labels.append(f'{TestCoverage.Covered_by_Junit.value}({len(junit_issues_only)})')
         if len(tuj_issues_only)>0:
-            ratios.append(len(tuj_issues_only)/len(jira_test_coverage.issue_keys))
+            ratios.append(len(tuj_issues_only)/total_issues_count)
             labels.append(f'{TestCoverage.Covered_by_Tuj.value}({len(tuj_issues_only)})')
         if len(manual_case_issues_only)>0:
-            ratios.append(len(manual_case_issues_only)/len(jira_test_coverage.issue_keys))
+            ratios.append(len(manual_case_issues_only)/total_issues_count)
             labels.append(f'{TestCoverage.Covered_by_manualCases.value}({len(manual_case_issues_only)})')
         if len(junit_tuj_issues_only)>0:
-            ratios.append(len(junit_tuj_issues_only)/len(jira_test_coverage.issue_keys))
+            ratios.append(len(junit_tuj_issues_only)/total_issues_count)
             labels.append(f'{TestCoverage.Covered_by_Junit.value}+{TestCoverage.Covered_by_Tuj.value}({len(junit_tuj_issues_only)})')
         if len(junit_manual_case_issues_only)>0:
-            ratios.append(len(junit_manual_case_issues_only)/len(jira_test_coverage.issue_keys))
+            ratios.append(len(junit_manual_case_issues_only)/total_issues_count)
             labels.append(f'{TestCoverage.Covered_by_Junit.value}+{TestCoverage.Covered_by_manualCases.value}({len(junit_manual_case_issues_only)})')
         if len(tuj_manual_case_issues_only)>0:
-            ratios.append(len(tuj_manual_case_issues_only)/len(jira_test_coverage.issue_keys))
+            ratios.append(len(tuj_manual_case_issues_only)/total_issues_count)
             labels.append(f'{TestCoverage.Covered_by_Tuj.value}+{TestCoverage.Covered_by_manualCases.value}({len(tuj_manual_case_issues_only)})')
         if len(junit_tuj_manual_case_issues)>0:
-            ratios.append(len(junit_tuj_manual_case_issues)/len(jira_test_coverage.issue_keys))
+            ratios.append(len(junit_tuj_manual_case_issues)/total_issues_count)
             labels.append(f'{TestCoverage.Covered_by_Junit.value}+{TestCoverage.Covered_by_Tuj.value}+{TestCoverage.Covered_by_manualCases.value}({len(junit_tuj_manual_case_issues)})')
 
     explode = []
@@ -231,4 +224,4 @@ def jira_viz(jira_test_coverage):
 
 
 if __name__ == "__main__":
-    jira_viz(jira_sa(load_jira_config('jira.conf')))
+    jira_viz(jira_sa(JiraConfig('jira.conf')))
