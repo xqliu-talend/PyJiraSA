@@ -8,7 +8,7 @@ from pipenv.utils import mkdir_p
 
 
 class TestCoverage(Enum):
-    '''the name must be the same with the lable of jira issues'''
+    '''the name must be the same with the label of jira issues'''
     Covered_by_Junit = 'Junit'
     Covered_by_Tuj = 'Tuj'
     Covered_by_manualCases = 'ManualCase'

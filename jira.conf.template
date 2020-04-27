@@ -4,7 +4,7 @@ project_name = Talend Data Quality
 
 [sprint]
 board_id = 233
-sprint_id = 1443,1499
+sprint_id = 1500,1501
 
 [login]
 username = {your username}
